@@ -22,6 +22,15 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string, {
 app.use(cors({ origin: true, credentials: true }));
 app.use(express.json());
 
+// --- ROOT ROUTE ---
+app.get('/', (req: Request, res: Response) => {
+  res.json({
+    success: true,
+    message: 'Welcome to the Ummah Care API!',
+    status: 'Running smoothly'
+  });
+});
+
 // --- UTILS ---
 const JWT_SECRET = process.env.JWT_SECRET || 'super_secret_jwt_key_12345';
 const generateTokens = (user: any) => {
