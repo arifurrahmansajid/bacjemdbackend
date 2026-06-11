@@ -235,7 +235,8 @@ app.get('/api/v1/users/all-organizations', authMiddleware, async (req: Request, 
 // STATS ROUTE
 // ==========================================
 
-app.get('/api/v1/stats', async (req: Request, res: Response): Promise<any> => {
+app.get('/api/v1/stats', authMiddleware, async (req: Request, res: Response): Promise<any> => {
+  const user = (req as any).user;
   try {
     const totalRequests = await prisma.request.count();
     const totalDonations = await prisma.donation.count();
@@ -268,35 +269,50 @@ app.get('/api/v1/stats', async (req: Request, res: Response): Promise<any> => {
       usersOverTime: []
     };
 
+    // User Specific Stats
+    const userRequests = await prisma.request.findMany({ where: { createdBy: user.id } });
+    const userDonationsReceived = await prisma.donation.findMany({ where: { request: { createdBy: user.id } } });
+
     const userStats = {
-      requestCount: 0,
-      activeRequestCount: 0,
-      completedRequestCount: 0,
-      receivedDonationCount: 0,
-      totalReceivedAmount: 0,
+      requestCount: userRequests.length,
+      activeRequestCount: userRequests.filter(r => r.status === 'OPEN').length,
+      completedRequestCount: userRequests.filter(r => r.status === 'COMPLETED').length,
+      receivedDonationCount: userDonationsReceived.length,
+      totalReceivedAmount: userDonationsReceived.reduce((sum, d) => sum + d.amount, 0),
       recentRequests: [],
       recentReceivedDonations: [],
       requestStatusDistribution: []
     };
 
+    // Donor Specific Stats
+    const donorDonations = await prisma.donation.findMany({ where: { donorId: user.id } });
+    const donorResponses = await prisma.response.findMany({ where: { userId: user.id, responseType: 'DONATE' } });
+    const donationStatusDistribution = await prisma.donation.groupBy({
+      by: ['status'],
+      where: { donorId: user.id },
+      _count: { id: true }
+    });
+    
+    const donorStats = {
+      donationCount: donorDonations.length,
+      totalDonated: donorDonations.reduce((sum, d) => sum + d.amount, 0),
+      responseCount: donorResponses.length,
+      donationStatusDistribution: donationStatusDistribution,
+      recentDonations: [],
+      categoryStats: { FOOD: { count: 0, amount: 0 }, MEDICAL: { count: 0, amount: 0 }, EDUCATION: { count: 0, amount: 0 }, SHELTER: { count: 0, amount: 0 }, OTHER: { count: 0, amount: 0 } }
+    };
+
+    // Volunteer Specific Stats
+    const volunteerResponses = await prisma.response.findMany({ where: { userId: user.id, responseType: 'VOLUNTEER' } });
     const volunteerStats = {
       assignmentCount: 0,
       completedAssignmentCount: 0,
       inProgressAssignmentCount: 0,
-      responseCount: 0,
+      responseCount: volunteerResponses.length,
       reviewCount: 0,
       averageRating: 0,
       recentAssignments: [],
       assignmentStatusDistribution: []
-    };
-
-    const donorStats = {
-      donationCount: 0,
-      totalDonated: 0,
-      responseCount: 0,
-      recentDonations: [],
-      donationStatusDistribution: [],
-      categoryStats: { FOOD: { count: 0, amount: 0 }, MEDICAL: { count: 0, amount: 0 }, EDUCATION: { count: 0, amount: 0 }, SHELTER: { count: 0, amount: 0 }, OTHER: { count: 0, amount: 0 } }
     };
 
     const organizationStats = {
