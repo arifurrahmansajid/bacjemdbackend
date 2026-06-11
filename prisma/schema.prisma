@@ -1,0 +1,250 @@
+datasource db {
+  provider = "postgresql"
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum UserRole {
+  USER
+  ADMIN
+  SUPER_ADMIN
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+  BANNED
+}
+
+enum UserTypeEnum {
+  DONOR
+  VOLUNTEER
+  ORGANIZATION
+}
+
+enum UserTypeStatus {
+  PENDING
+  ACTIVE
+  REJECTED
+  SUSPENDED
+}
+
+model User {
+  id            String     @id @default(uuid())
+  name          String
+  email         String     @unique
+  password      String
+  phone         String?
+  bio           String?
+  emailVerified Boolean    @default(false)
+  avatarUrl     String?
+  location      String?
+  role          UserRole   @default(USER)
+  status        UserStatus @default(ACTIVE)
+
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  userTypes     UserType[]
+  organization  Organization?
+  createdRequests Request[]  @relation("CreatedRequests")
+  donations     Donation[]
+  responses     Response[]
+  volunteerAssignments Assignment[]
+  messagesSent  Message[] @relation("MessagesSent")
+  messagesReceived Message[] @relation("MessagesReceived")
+  reviewsGiven  Review[] @relation("ReviewsGiven")
+  reviewsReceived Review[] @relation("ReviewsReceived")
+}
+
+model UserType {
+  id        String         @id @default(uuid())
+  userId    String
+  user      User           @relation(fields: [userId], references: [id])
+  type      UserTypeEnum
+  status    UserTypeStatus @default(PENDING)
+
+  @@unique([userId, type])
+}
+
+model Organization {
+  id                 String    @id @default(uuid())
+  userId             String    @unique
+  user               User      @relation(fields: [userId], references: [id])
+  orgName            String
+  description        String?
+  logoUrl            String?
+  website            String?
+  registrationNumber String?
+  contactEmail       String?
+  contactPhone       String?
+  isVerified         Boolean   @default(false)
+  verifiedAt         DateTime?
+  verifiedBy         String?
+
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+}
+
+enum Category {
+  MEDICAL
+  FOOD
+  FINANCIAL
+  HOUSING
+  OTHER
+}
+
+enum Urgency {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum HelpType {
+  FINANCIAL
+  PHYSICAL
+  BOTH
+}
+
+enum RequestStatus {
+  OPEN
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+}
+
+model Request {
+  id          String        @id @default(uuid())
+  title       String
+  description String
+  category    Category
+  urgency     Urgency
+  helpType    HelpType
+  status      RequestStatus @default(OPEN)
+  amountNeeded Float?
+  location    String?
+  isAnonymous Boolean       @default(false)
+  expiresAt   DateTime?
+  
+  createdBy   String
+  creator     User          @relation("CreatedRequests", fields: [createdBy], references: [id])
+
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+
+  responses   Response[]
+  donations   Donation[]
+  assignments Assignment[]
+  messages    Message[]
+  reviews     Review[]
+}
+
+enum DonationStatus {
+  PENDING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  STRIPE
+  CASH
+  BANK_TRANSFER
+}
+
+model Campaign {
+  id          String     @id @default(uuid())
+  title       String
+  description String?
+  targetAmount Float?
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  donations   Donation[]
+}
+
+model Donation {
+  id                    String        @id @default(uuid())
+  amount                Float
+  donorId               String
+  donor                 User          @relation(fields: [donorId], references: [id])
+  requestId             String?
+  request               Request?      @relation(fields: [requestId], references: [id])
+  campaignId            String?
+  campaign              Campaign?     @relation(fields: [campaignId], references: [id])
+  status                DonationStatus @default(PENDING)
+  paymentMethod         PaymentMethod @default(STRIPE)
+  paymentMetadata       Json?
+  stripeSessionId       String?
+  stripePaymentIntentId String?
+  stripeEventId         String?
+  transactionId         String?
+
+  createdAt             DateTime      @default(now())
+  updatedAt             DateTime      @updatedAt
+}
+
+enum ResponseType {
+  VOLUNTEER
+  DONATE
+  COORDINATE
+}
+
+model Response {
+  id           String       @id @default(uuid())
+  requestId    String
+  request      Request      @relation(fields: [requestId], references: [id])
+  userId       String
+  user         User         @relation(fields: [userId], references: [id])
+  responseType ResponseType @default(VOLUNTEER)
+  message      String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+}
+
+model Assignment {
+  id        String   @id @default(uuid())
+  requestId String
+  request   Request  @relation(fields: [requestId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  status    String   @default("ASSIGNED")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Message {
+  id         String   @id @default(uuid())
+  senderId   String
+  sender     User     @relation("MessagesSent", fields: [senderId], references: [id])
+  receiverId String
+  receiver   User     @relation("MessagesReceived", fields: [receiverId], references: [id])
+  requestId  String?
+  request    Request? @relation(fields: [requestId], references: [id])
+  content    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+}
+
+model Review {
+  id        String   @id @default(uuid())
+  reviewerId String
+  reviewer   User    @relation("ReviewsGiven", fields: [reviewerId], references: [id])
+  revieweeId String
+  reviewee   User    @relation("ReviewsReceived", fields: [revieweeId], references: [id])
+  requestId  String?
+  request    Request? @relation(fields: [requestId], references: [id])
+  rating     Int
+  comment    String?
+  createdAt  DateTime @default(now())
+}
+
+model Newsletter {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+}
