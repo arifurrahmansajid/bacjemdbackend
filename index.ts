@@ -524,7 +524,7 @@ app.get('/api/v1/donations/received', authMiddleware, async (req: Request, res: 
 // ==========================================
 
 app.post('/api/v1/donations/:id/payment', authMiddleware, async (req: Request, res: Response): Promise<any> => {
-  const { id } = req.params;
+  const id = req.params.id as string;
   const { successUrl, cancelUrl } = req.body;
   try {
     const donation = await prisma.donation.findUnique({
@@ -551,8 +551,8 @@ app.post('/api/v1/donations/:id/payment', authMiddleware, async (req: Request, r
         },
       ],
       mode: 'payment',
-      success_url: successUrl,
-      cancel_url: cancelUrl,
+      success_url: successUrl as string,
+      cancel_url: cancelUrl as string,
       metadata: { donationId: donation.id },
     });
 
