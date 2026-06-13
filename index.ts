@@ -600,10 +600,11 @@ app.post('/api/v1/donations/:id/payment', authMiddleware, async (req: Request, r
 app.post('/api/v1/messages', authMiddleware, async (req: Request, res: Response): Promise<any> => {
   const user = (req as any).user;
   try {
-    const message = await prisma.message.create({
-      data: { ...req.body, senderId: user.id }
+    const { message, content, ...rest } = req.body;
+    const record = await prisma.message.create({
+      data: { ...rest, content: content ?? message, senderId: user.id }
     });
-    res.json({ success: true, data: message });
+    res.json({ success: true, data: record });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
@@ -615,6 +616,30 @@ app.get('/api/v1/messages/conversation', authMiddleware, async (req: Request, re
     const messages = await prisma.message.findMany({
       where: { OR: [{ senderId: user.id }, { receiverId: user.id }] },
       include: { sender: true, receiver: true }
+    });
+    res.json({ success: true, data: messages });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// GET conversation messages between current user and a participant for a specific request
+app.get('/api/v1/messages/conversation/:requestId/:participantId', authMiddleware, async (req: Request, res: Response): Promise<any> => {
+  const user = (req as any).user;
+  const requestId = req.params.requestId as string;
+  const participantId = req.params.participantId as string;
+  const userId = user.id as string;
+  try {
+    const messages = await prisma.message.findMany({
+      where: {
+        requestId,
+        OR: [
+          { senderId: userId, receiverId: participantId },
+          { senderId: participantId, receiverId: userId }
+        ]
+      },
+      include: { sender: true, receiver: true },
+      orderBy: { createdAt: 'asc' }
     });
     res.json({ success: true, data: messages });
   } catch (error: any) {
