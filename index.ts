@@ -238,38 +238,134 @@ app.get('/api/v1/users/all-organizations', authMiddleware, async (req: Request, 
 app.get('/api/v1/stats', authMiddleware, async (req: Request, res: Response): Promise<any> => {
   const user = (req as any).user;
   try {
-    const totalRequests = await prisma.request.count();
-    const totalDonations = await prisma.donation.count();
-    const totalUsers = await prisma.user.count();
+    // ── Admin-wide counts ─────────────────────────────────────────────────
+    const [totalRequests, totalDonations, totalUsers, totalResponses, totalMessages] = await Promise.all([
+      prisma.request.count(),
+      prisma.donation.count(),
+      prisma.user.count(),
+      prisma.response.count(),
+      prisma.message.count(),
+    ]);
+
+    // Total donated amount (completed donations only)
+    const totalDonationAmountResult = await prisma.donation.aggregate({
+      _sum: { amount: true },
+      where: { status: 'COMPLETED' },
+    });
+    const totalDonationAmount = totalDonationAmountResult._sum.amount ?? 0;
+
+    // Organization count
+    const organizationCount = await prisma.userType.count({ where: { type: 'ORGANIZATION' } });
+
+    // Request status distribution
+    const requestStatusDist = await prisma.request.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    });
+    const requestStatusDistribution = requestStatusDist.map(r => ({ status: r.status, _count: { id: r._count.id } }));
+
+    // Request category distribution
+    const requestCatDist = await prisma.request.groupBy({
+      by: ['category'],
+      _count: { id: true },
+    });
+    const requestCategoryDistribution = requestCatDist.map(r => ({ category: r.category, _count: { id: r._count.id } }));
+
+    // Request urgency distribution
+    const requestUrgencyDist = await prisma.request.groupBy({
+      by: ['urgency'],
+      _count: { id: true },
+    });
+    const requestUrgencyDistribution = requestUrgencyDist.map(r => ({ urgency: r.urgency, _count: { id: r._count.id } }));
+
+    // Open + Critical request counts
+    const openRequestCount = requestStatusDist.find(r => r.status === 'OPEN')?._count.id ?? 0;
+    const criticalRequestCount = requestUrgencyDist.find(r => r.urgency === 'CRITICAL')?._count.id ?? 0;
+
+    // Donation status distribution (all)
+    const donationStatusDist = await prisma.donation.groupBy({
+      by: ['status'],
+      _count: { id: true },
+    });
+
+    // Response type distribution
+    const responseTypeDist = await prisma.response.groupBy({
+      by: ['responseType'],
+      _count: { id: true },
+    });
+
+    // ── Over-time helpers (last 6 months) ────────────────────────────────
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+
+    const recentRequests = await prisma.request.findMany({
+      where: { createdAt: { gte: sixMonthsAgo } },
+      select: { createdAt: true },
+    });
+    const recentDonationsAll = await prisma.donation.findMany({
+      where: { createdAt: { gte: sixMonthsAgo } },
+      select: { createdAt: true, amount: true, status: true },
+    });
+    const recentUsers = await prisma.user.findMany({
+      where: { createdAt: { gte: sixMonthsAgo } },
+      select: { createdAt: true },
+    });
+
+    // Group by month helper
+    const groupByMonth = (items: { createdAt: Date }[]) => {
+      const map: Record<string, number> = {};
+      items.forEach(item => {
+        const key = `${item.createdAt.getFullYear()}-${String(item.createdAt.getMonth() + 1).padStart(2, '0')}-01`;
+        map[key] = (map[key] ?? 0) + 1;
+      });
+      return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).map(([month, count]) => ({ month, count }));
+    };
+
+    const groupDonationsByMonth = (items: { createdAt: Date; amount: number; status: string }[]) => {
+      const map: Record<string, number> = {};
+      items.filter(d => d.status === 'COMPLETED').forEach(item => {
+        const key = `${item.createdAt.getFullYear()}-${String(item.createdAt.getMonth() + 1).padStart(2, '0')}-01`;
+        map[key] = (map[key] ?? 0) + item.amount;
+      });
+      return Object.entries(map).sort(([a], [b]) => a.localeCompare(b)).map(([month, amount]) => ({ month, amount }));
+    };
+
+    const requestsOverTime = groupByMonth(recentRequests);
+    const donationsOverTime = groupDonationsByMonth(recentDonationsAll);
+    const usersOverTime = groupByMonth(recentUsers);
 
     const adminStats = {
       userCount: totalUsers,
       requestCount: totalRequests,
       donationCount: totalDonations,
+      organizationCount,
+      responseCount: totalResponses,
+      messageCount: totalMessages,
+      totalDonationAmount,
+      openRequestCount,
+      criticalRequestCount,
+      // Arrays for charts
+      requestStatusDistribution,
+      requestCategoryDistribution,
+      requestUrgencyDistribution,
+      donationStatusDistribution: donationStatusDist.map(d => ({ status: d.status, _count: { id: d._count.id } })),
+      responseTypeDistribution: responseTypeDist.map(r => ({ responseType: r.responseType, _count: { id: r._count.id } })),
+      requestsOverTime,
+      donationsOverTime,
+      usersOverTime,
+      // Unused legacy fields kept for type compatibility
       campaignCount: 0,
-      organizationCount: 0,
       assignmentCount: 0,
-      responseCount: 0,
-      messageCount: 0,
       reviewCount: 0,
       reportCount: 0,
       notificationCount: 0,
       verifiedOrgCount: 0,
-      totalDonationAmount: 0,
       userTypeCounts: [],
-      requestStatusDistribution: [],
-      donationStatusDistribution: [],
       campaignStatusDistribution: [],
-      requestCategoryDistribution: [],
-      requestUrgencyDistribution: [],
-      responseTypeDistribution: [],
       assignmentStatusDistribution: [],
-      donationsOverTime: [],
-      requestsOverTime: [],
-      usersOverTime: []
     };
 
-    // User Specific Stats
+    // ── Per-user stats ────────────────────────────────────────────────────
     const userRequests = await prisma.request.findMany({ where: { createdBy: user.id } });
     const userDonationsReceived = await prisma.donation.findMany({ where: { request: { createdBy: user.id } } });
 
@@ -281,28 +377,28 @@ app.get('/api/v1/stats', authMiddleware, async (req: Request, res: Response): Pr
       totalReceivedAmount: userDonationsReceived.reduce((sum, d) => sum + d.amount, 0),
       recentRequests: [],
       recentReceivedDonations: [],
-      requestStatusDistribution: []
+      requestStatusDistribution: [],
     };
 
-    // Donor Specific Stats
+    // ── Donor stats ───────────────────────────────────────────────────────
     const donorDonations = await prisma.donation.findMany({ where: { donorId: user.id } });
     const donorResponses = await prisma.response.findMany({ where: { userId: user.id, responseType: 'DONATE' } });
     const donationStatusDistribution = await prisma.donation.groupBy({
       by: ['status'],
       where: { donorId: user.id },
-      _count: { id: true }
+      _count: { id: true },
     });
-    
+
     const donorStats = {
       donationCount: donorDonations.length,
       totalDonated: donorDonations.reduce((sum, d) => sum + d.amount, 0),
       responseCount: donorResponses.length,
-      donationStatusDistribution: donationStatusDistribution,
+      donationStatusDistribution,
       recentDonations: [],
-      categoryStats: { FOOD: { count: 0, amount: 0 }, MEDICAL: { count: 0, amount: 0 }, EDUCATION: { count: 0, amount: 0 }, SHELTER: { count: 0, amount: 0 }, OTHER: { count: 0, amount: 0 } }
+      categoryStats: { FOOD: { count: 0, amount: 0 }, MEDICAL: { count: 0, amount: 0 }, EDUCATION: { count: 0, amount: 0 }, SHELTER: { count: 0, amount: 0 }, OTHER: { count: 0, amount: 0 } },
     };
 
-    // Volunteer Specific Stats
+    // ── Volunteer stats ───────────────────────────────────────────────────
     const volunteerResponses = await prisma.response.findMany({ where: { userId: user.id, responseType: 'VOLUNTEER' } });
     const volunteerStats = {
       assignmentCount: 0,
@@ -312,21 +408,14 @@ app.get('/api/v1/stats', authMiddleware, async (req: Request, res: Response): Pr
       reviewCount: 0,
       averageRating: 0,
       recentAssignments: [],
-      assignmentStatusDistribution: []
+      assignmentStatusDistribution: [],
     };
 
     const organizationStats = {
-      campaignCount: 0,
-      activeCampaignCount: 0,
-      completedCampaignCount: 0,
-      totalRaised: 0,
-      goalAmount: 0,
-      assignmentCount: 0,
-      completedAssignmentCount: 0,
-      donationCount: 0,
-      totalDonationAmount: 0,
-      campaignPerformance: [],
-      recentDonations: []
+      campaignCount: 0, activeCampaignCount: 0, completedCampaignCount: 0,
+      totalRaised: 0, goalAmount: 0, assignmentCount: 0,
+      completedAssignmentCount: 0, donationCount: 0, totalDonationAmount: 0,
+      campaignPerformance: [], recentDonations: [],
     };
 
     res.json({ success: true, data: { adminStats, userStats, volunteerStats, donorStats, organizationStats } });
