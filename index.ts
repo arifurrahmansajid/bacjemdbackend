@@ -647,6 +647,42 @@ app.get('/api/v1/messages/conversation/:requestId/:participantId', authMiddlewar
   }
 });
 
+// PATCH /api/v1/messages/:id — edit a message (sender only)
+app.patch('/api/v1/messages/:id', authMiddleware, async (req: Request, res: Response): Promise<any> => {
+  const user = (req as any).user;
+  const id = req.params.id as string;
+  try {
+    const existing = await prisma.message.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Message not found' });
+    if (existing.senderId !== user.id) return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const { message, content } = req.body;
+    const updated = await prisma.message.update({
+      where: { id },
+      data: { content: content ?? message }
+    });
+    res.json({ success: true, data: updated });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+// DELETE /api/v1/messages/:id — delete a message (sender only)
+app.delete('/api/v1/messages/:id', authMiddleware, async (req: Request, res: Response): Promise<any> => {
+  const user = (req as any).user;
+  const id = req.params.id as string;
+  try {
+    const existing = await prisma.message.findUnique({ where: { id } });
+    if (!existing) return res.status(404).json({ success: false, message: 'Message not found' });
+    if (existing.senderId !== user.id) return res.status(403).json({ success: false, message: 'Forbidden' });
+
+    const deleted = await prisma.message.delete({ where: { id } });
+    res.json({ success: true, data: deleted });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
 // ==========================================
 // NEWSLETTER ROUTE
 // ==========================================
