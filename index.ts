@@ -540,7 +540,14 @@ app.get('/api/v1/responses/my-responses', authMiddleware, async (req: Request, r
 
 app.get('/api/v1/responses', authMiddleware, async (req: Request, res: Response): Promise<any> => {
   try {
-    const responses = await prisma.response.findMany({ include: { request: true, user: true } });
+    const responses = await prisma.response.findMany({
+      include: {
+        user: true,
+        request: {
+          include: { creator: true }
+        }
+      }
+    });
     res.json({ success: true, data: responses });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
