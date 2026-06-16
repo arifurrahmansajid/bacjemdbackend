@@ -540,7 +540,11 @@ app.get('/api/v1/responses/my-responses', authMiddleware, async (req: Request, r
 
 app.get('/api/v1/responses', authMiddleware, async (req: Request, res: Response): Promise<any> => {
   try {
+    const { requestId } = req.query;
+    const whereClause = requestId ? { requestId: requestId as string } : {};
+    
     const responses = await prisma.response.findMany({
+      where: whereClause,
       include: {
         user: true,
         request: {
@@ -635,6 +639,20 @@ app.get('/api/v1/donations/received', authMiddleware, async (req: Request, res: 
       include: { donor: true, request: true, campaign: true }
     });
     res.json({ success: true, data: donations });
+  } catch (error: any) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+});
+
+app.patch('/api/v1/donations/:id/status', authMiddleware, async (req: Request, res: Response): Promise<any> => {
+  const id = req.params.id as string;
+  const { status } = req.body;
+  try {
+    const updated = await prisma.donation.update({
+      where: { id },
+      data: { status }
+    });
+    res.json({ success: true, data: updated });
   } catch (error: any) {
     res.status(500).json({ success: false, message: error.message });
   }
