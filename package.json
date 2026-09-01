@@ -4,9 +4,9 @@
   "description": "",
   "main": "index.js",
   "scripts": {
-    "start": "node dist/index.js",
-    "dev": "ts-node-dev --respawn --transpile-only index.ts",
-    "build": "tsc",
+    "start": "node init && node dist/index.js",
+    "dev": "node init && ts-node-dev --respawn --transpile-only index.ts",
+    "build": "node init && tsc",
     "postinstall": "prisma generate"
   },
   "keywords": [],
@@ -21,6 +21,7 @@
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
+    "node-fetch": "^3.3.2",
     "nodemailer": "^8.0.10",
     "pg": "^8.21.0",
     "stripe": "^22.2.0"
